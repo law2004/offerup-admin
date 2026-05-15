@@ -1,0 +1,14 @@
+# Facebook session cookies (full account access)
+www_facebook_com_cookies.json
+
+# Server data (persisted settings, items, jobs)
+server/data/
+
+# Environment variables (API tokens, credentials)
+server/.env
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/

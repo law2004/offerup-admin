@@ -1,0 +1,3 @@
+◇ injected env (0) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+OfferUp scraper server running on http://localhost:3001
+Telegram notifications: not configured (set in Settings page or .env)
