@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import ToastContainer from './components/Toast';
-import Terminal from './pages/Terminal';
+import CommandCenter from './pages/CommandCenter';
 import LivePanels from './components/LivePanels';
 import './App.css';
 
@@ -45,7 +45,7 @@ export default function App() {
         <div className="app app-split">
           <div className="split-left" style={{ flex: `0 0 ${splitRatio}%` }}>
             <Routes>
-              <Route path="/*" element={<Terminal embedded />} />
+              <Route path="/*" element={<CommandCenter />} />
             </Routes>
           </div>
           <div

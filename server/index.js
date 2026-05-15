@@ -8,6 +8,7 @@ const cheerio = require("cheerio");
 const TelegramBot = require("node-telegram-bot-api");
 const storage = require("./storage");
 const { scrapeBySource } = require("./services/scraperFactory");
+const { analyzeBatch } = require("./services/dealAnalyzer");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -150,7 +151,18 @@ async function runAutoScrape() {
       }
       // Persist items to storage
       if (listings.length > 0) {
-        storage.addItems(listings.map(l => ({ ...l, source: entry.source || 'offerup', sourceUrl: entry.url, sourceLabel: entry.label, scrapedAt: new Date().toISOString() })));
+        const enriched = listings.map(l => ({ ...l, source: entry.source || 'offerup', sourceUrl: entry.url, sourceLabel: entry.label, scrapedAt: new Date().toISOString() }));
+        storage.addItems(enriched);
+        analyzeBatch(listings).then(analyzed => {
+          const all = storage.getItems();
+          const analyzedUrls = new Set(analyzed.map(a => a.url));
+          const updated = all.map(item =>
+            analyzedUrls.has(item.url)
+              ? { ...item, ...analyzed.find(a => a.url === item.url), source: item.source }
+              : item
+          );
+          storage.saveItems(updated);
+        }).catch(e => console.error('[AI] Auto-scrape analysis error:', e.message));
       }
       entry.previousListings = listings;
       entry.lastScraped = new Date().toISOString();
@@ -328,7 +340,20 @@ app.post("/api/scrape", async (req, res) => {
     }
     console.log(`Found ${listings.length} listings`);
     if (listings.length > 0) {
-      storage.addItems(listings.map(l => ({ ...l, source: detectedSource, sourceUrl: url, scrapedAt: new Date().toISOString() })));
+      const enriched = listings.map(l => ({ ...l, source: detectedSource, sourceUrl: url, scrapedAt: new Date().toISOString() }));
+      storage.addItems(enriched);
+      // Run AI deal analysis in background (non-blocking)
+      analyzeBatch(listings).then(analyzed => {
+        const all = storage.getItems();
+        const analyzedUrls = new Set(analyzed.map(a => a.url));
+        const updated = all.map(item =>
+          analyzedUrls.has(item.url)
+            ? { ...item, ...analyzed.find(a => a.url === item.url), source: item.source }
+            : item
+        );
+        storage.saveItems(updated);
+        console.log(`[AI] Analyzed ${analyzed.length} new listings for deals`);
+      }).catch(e => console.error('[AI] Background analysis error:', e.message));
     }
     res.json({ success: true, total: listings.length, listings, source: detectedSource });
   } catch (error) {
@@ -361,7 +386,18 @@ app.post("/api/scrape-all", async (req, res) => {
         listings = await scrapeOfferUp(entry.url);
       }
       if (listings.length > 0) {
-        storage.addItems(listings.map(l => ({ ...l, source: src, sourceUrl: entry.url, sourceLabel: entry.label, scrapedAt: new Date().toISOString() })));
+        const enriched = listings.map(l => ({ ...l, source: src, sourceUrl: entry.url, sourceLabel: entry.label, scrapedAt: new Date().toISOString() }));
+        storage.addItems(enriched);
+        analyzeBatch(listings).then(analyzed => {
+          const all = storage.getItems();
+          const analyzedUrls = new Set(analyzed.map(a => a.url));
+          const updated = all.map(item =>
+            analyzedUrls.has(item.url)
+              ? { ...item, ...analyzed.find(a => a.url === item.url), source: item.source }
+              : item
+          );
+          storage.saveItems(updated);
+        }).catch(e => console.error('[AI] Background scrape-all analysis error:', e.message));
       }
       results.push({ url: entry.url, label: entry.label || "", source: src, success: true, total: listings.length, listings });
     } catch (e) {
@@ -447,6 +483,39 @@ app.get("/api/items/export", (req, res) => {
 // Stats (NEW)
 app.get("/api/stats", (req, res) => {
   res.json(storage.getStats());
+});
+
+// Deals — get items sorted by deal score
+app.get("/api/deals", (req, res) => {
+  const all = storage.getItems();
+  const scored = all.filter(i => i.dealScore != null);
+  const sorted = scored.sort((a, b) => (b.dealScore || 0) - (a.dealScore || 0));
+  const unscored = all.filter(i => i.dealScore == null).length;
+  res.json({ success: true, total: sorted.length, unscored, deals: sorted.slice(0, 50) });
+});
+
+// Analyze all unscored items (batch command)
+app.post("/api/analyze-deals", async (req, res) => {
+  const all = storage.getItems();
+  const unscored = all.filter(i => i.dealScore == null);
+  if (unscored.length === 0) {
+    return res.json({ success: true, message: "All items already scored.", analyzed: 0 });
+  }
+  console.log(`[AI] Batch analyzing ${unscored.length} unscored items...`);
+  try {
+    const analyzed = await analyzeBatch(unscored);
+    const analyzedUrls = new Set(analyzed.map(a => a.url));
+    const updated = all.map(item =>
+      analyzedUrls.has(item.url)
+        ? { ...item, ...analyzed.find(a => a.url === item.url), source: item.source }
+        : item
+    );
+    storage.saveItems(updated);
+    console.log(`[AI] Batch analyzed ${analyzed.length} items`);
+    res.json({ success: true, analyzed: analyzed.length });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 // Start

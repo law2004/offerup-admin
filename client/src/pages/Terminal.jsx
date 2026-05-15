@@ -79,6 +79,16 @@ const COMMANDS = {
     desc: 'Enter live dashboard mode (auto-refreshing stats & items)',
     category: 'ai',
   },
+  deals: {
+    syntax: 'deals',
+    desc: 'Show top AI-scored deals (best value items)',
+    category: 'ai',
+  },
+  'analyze-deals': {
+    syntax: 'analyze-deals',
+    desc: 'Run AI deal analysis on all unscored items',
+    category: 'ai',
+  },
 };
 
 const HELP_TEXT = `
@@ -234,6 +244,15 @@ function parseAICommand(input) {
 
   // ── About ──
   if (text.includes('about') || text.includes('who are you') || text.includes('version')) return { command: 'about', args: [], response: '' };
+
+  // ── Deals / Analyze ──
+  if (text.includes('deal') || text.includes('bargain') || text.includes('best value') || text.includes('top pick')) {
+    return { command: 'deals', args: [], response: 'Fetching top AI-scored deals...' };
+  }
+  if ((text.includes('analyze') || text.includes('score') || text.includes('rate') || text.includes('evaluate')) &&
+      (text.includes('item') || text.includes('listing') || text.includes('deal') || text.includes('scrape'))) {
+    return { command: 'analyze-deals', args: [], response: 'Running AI deal analysis on all unscored items...' };
+  }
 
   // ── Search / Query items ──
   if (text.includes('show') || text.includes('list') || text.includes('find') || text.includes('search') || text.includes('look')) {
@@ -636,6 +655,57 @@ export default function Terminal({ embedded = false }) {
     }
   }, []);
 
+  // ── Deals Handler ──
+  const handleDeals = useCallback(async () => {
+    addOutput(colors.dim('⏳ Fetching top AI-scored deals...'));
+    try {
+      const data = await api.getDeals();
+      if (!data.deals || data.deals.length === 0) {
+        addOutput(colors.yellow('● No scored deals yet. Run ' + colors.cyan('analyze-deals') + ' to analyze listings.'));
+        if (data.unscored > 0) {
+          addOutput(colors.dim(`  ${data.unscored} unscored items waiting for analysis.`));
+        }
+      } else {
+        addOutput(colors.green(`● Top ${data.deals.length} deals (by AI score):`));
+        if (data.unscored > 0) {
+          addOutput(colors.dim(`  ${data.unscored} additional items unscored.`));
+        }
+        data.deals.slice(0, 20).forEach((item, i) => {
+          const scoreColor = item.dealScore >= 8 ? colors.green : item.dealScore >= 6 ? colors.yellow : colors.dim;
+          const flags = [];
+          if (item.redFlags && item.redFlags.length > 0) flags.push(colors.red('⚠ ' + item.redFlags.join(', ')));
+          if (item.summary) flags.push(colors.dim(item.summary));
+          const displayTitle = item.title || (item.url ? (item.url.length > 60 ? item.url.substring(0, 57) + '...' : item.url) : 'Untitled');
+          addOutput(
+            `  ${colors.cyan((i + 1).toString().padStart(2))}. ${scoreColor('[' + (item.dealScore || '?') + '/10]')} ${colors.white(displayTitle)}\n` +
+            `      ${colors.green('$' + (item.price || '?'))}  ${colors.dim(String(item.source || '').toUpperCase())}  ${flags.length > 0 ? flags.join(' | ') : ''}`,
+            true
+          );
+        });
+      }
+    } catch (e) {
+      addOutput(colors.red(`✗ Error: ${e.message}`));
+    }
+  }, []);
+
+  // ── Analyze Deals Handler ──
+  const handleAnalyzeDeals = useCallback(async () => {
+    addOutput(colors.dim('🤖 Running AI deal analysis on all unscored items...'));
+    addOutput(colors.dim('  This may take a moment for large collections.'));
+    try {
+      const result = await api.analyzeDeals();
+      if (result.analyzed === 0) {
+        addOutput(colors.green('● All items already scored — nothing to analyze.'));
+      } else {
+        addOutput(colors.green(`● AI analysis complete — ${result.analyzed} items scored.`));
+        addOutput(colors.dim(`  Type ${colors.cyan('deals')} to see the top deals.`));
+      }
+    } catch (e) {
+      addOutput(colors.red(`✗ Error: ${e.message}`));
+      addOutput(colors.dim('  Ensure Ollama is running with llama3.2:3b model pulled.'));
+    }
+  }, []);
+
   // ── Live Mode Handler ──
   const handleLive = useCallback(() => {
     if (liveMode) {
@@ -688,11 +758,13 @@ export default function Terminal({ embedded = false }) {
       case 'auto-stop': await handleAutoStop(); break;
       case 'auto-status': await handleAutoStatus(); break;
       case 'live': handleLive(); break;
+      case 'deals': await handleDeals(); break;
+      case 'analyze-deals': await handleAnalyzeDeals(); break;
       default: addOutput(colors.red(`Unknown AI-routed command: ${parsed.command}`));
     }
   }, [handleHelp, handleClear, handleAbout, handleStatus, handleStats, handleSettings,
       handleScrape, handleScrapeAll, handleItems, handleExport, handleAutoStart,
-      handleAutoStop, handleAutoStatus, handleLive]);
+      handleAutoStop, handleAutoStatus, handleLive, handleDeals, handleAnalyzeDeals]);
 
   // ── Command router ──
   const executeCommand = useCallback(async (raw) => {
@@ -733,6 +805,8 @@ export default function Terminal({ embedded = false }) {
         case 'auto-status': await handleAutoStatus(); break;
         case 'ai': case 'ask': await handleAI(args); break;
         case 'live': handleLive(); break;
+        case 'deals': await handleDeals(); break;
+        case 'analyze-deals': await handleAnalyzeDeals(); break;
         default:
           addOutput(colors.red(`Unknown command: '${cmd}'.`));
           addOutput(colors.dim(`  Type ${colors.cyan('help')} for available commands or ${colors.cyan(`ai ${trimmed}`)} to try natural language.`));

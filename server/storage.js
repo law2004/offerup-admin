@@ -114,16 +114,29 @@ function saveJobs(jobs) {
 function getStats() {
   const items = getItems();
   const jobs = getJobs();
+  const scoredItems = items.filter(i => i.dealScore != null);
+  const avgScore = scoredItems.length > 0
+    ? Math.round(scoredItems.reduce((s, i) => s + (i.dealScore || 0), 0) / scoredItems.length * 10) / 10
+    : null;
   return {
     totalItems: items.length,
-    totalScrapes: 0, // would need counter tracking
+    totalScrapes: 0,
     activeJobs: jobs.length,
     recentItemCount: items.length,
+    scoredItems: scoredItems.length,
+    avgDealScore: avgScore,
   };
 }
 
+/**
+ * Overwrite all items (used for batch updates like deal analysis).
+ */
+function saveItems(items) {
+  writeJSON(ITEMS_FILE, items.slice(0, 10000));
+}
+
 module.exports = {
-  getItems, addItems, filterItems, exportItems,
+  getItems, addItems, filterItems, exportItems, saveItems,
   getSettings, saveSettings,
   getJobs, saveJobs,
   getStats,

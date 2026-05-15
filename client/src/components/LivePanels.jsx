@@ -219,7 +219,7 @@ export default function LivePanels() {
       <div className="lp-footer">
         <span className="lp-dim">Refreshes every 4s</span>
         <span className="lp-dim">·</span>
-        <span className="lp-dim">Use CMD terminal → for commands</span>
+        <span className="lp-dim">Use left panel → for actions</span>
       </div>
     </div>
   );

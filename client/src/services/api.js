@@ -24,6 +24,8 @@ export const api = {
   getSettings: () => request('GET', '/api/settings'),
   getStats: () => request('GET', '/api/stats'),
   getItems: (filters) => request('POST', '/api/items', filters || {}),
+  getDeals: () => request('GET', '/api/deals'),
+  analyzeDeals: () => request('POST', '/api/analyze-deals'),
   exportItems: async (format) => {
     const res = await fetch(`/api/items/export?format=${format || 'json'}`);
     if (!res.ok) throw new Error('Export failed');
